@@ -84,7 +84,7 @@ run_test "Entry appears in /insecure table" \
 
 # Test 5: Verify /secure route works with normal request
 run_test "/secure route responds to normal request" \
-    'curl -s "http://localhost:8888/secure?id=123" | grep -q "SECURE endpoint"'
+    'curl -s "http://localhost:8888/secure" | grep -q "SECURE: Protected Endpoint"'
 
 # Test 6: Verify ModSecurity blocks SQL injection on /secure
 echo -e "\n${YELLOW}Test 6:${NC} ModSecurity blocks SQL injection on /secure"
@@ -117,29 +117,66 @@ else
     print_test "SQL injection successful on /insecure (injected entry NOT found - HTTP $HTTP_CODE)" "FAIL"
 fi
 
-# Test 10: Verify database file exists
+# Test 9: Verify ModSecurity blocks SQL injection on POST /secure
+echo -e "\n${YELLOW}Test 9:${NC} ModSecurity blocks SQL injection on POST /secure"
+HTTP_CODE=$(curl -X POST "http://localhost:8888/secure" \
+    -d "entry=$INJECTION_PAYLOAD" \
+    -s -o /dev/null -w "%{http_code}")
+if [ "$HTTP_CODE" = "403" ]; then
+    print_test "SQL injection blocked on POST /secure (403 Forbidden)" "PASS"
+else
+    print_test "SQL injection blocked on POST /secure (got $HTTP_CODE, expected 403)" "FAIL"
+fi
+
+# Test 10: Verify normal POST to /secure works
+echo -e "\n${YELLOW}Test 10:${NC} Normal POST to /secure (add entry)"
+TIMESTAMP=$(date +%s)
+SECURE_TEST_ENTRY="E2E test entry from /secure - $TIMESTAMP"
+
+if curl -X POST "http://localhost:8888/secure" \
+    -d "entry=$SECURE_TEST_ENTRY" \
+    -s -o /dev/null -w "%{http_code}" | grep -q "200\|302"; then
+    print_test "POST to /secure (add entry)" "PASS"
+else
+    print_test "POST to /secure (add entry)" "FAIL"
+fi
+
+# Test 11: Verify entry appears in /secure table
+sleep 1  # Give database a moment to persist
+run_test "Entry appears in /secure table" \
+    "curl -s \"http://localhost:8888/secure\" | grep -q \"$SECURE_TEST_ENTRY\""
+
+# Test 12: Verify database file exists
 run_test "Database file exists at app/data/entries.db" \
     'test -f app/data/entries.db'
 
-# Test 11: Verify database has content
+# Test 13: Verify database has content
 run_test "Database contains entries" \
     'test -s app/data/entries.db'
 
-# Test 12: Verify /secure returns JSON
-run_test "/secure returns valid JSON" \
-    'curl -s "http://localhost:8888/secure?id=123" | grep -q "\"message\":"'
+# Test 14: Verify /secure returns HTML
+run_test "/secure returns HTML" \
+    'curl -s "http://localhost:8888/secure" | grep -q "<!DOCTYPE html>"'
 
-# Test 13: Verify /insecure returns HTML
+# Test 15: Verify /insecure returns HTML
 run_test "/insecure returns HTML" \
     'curl -s "http://localhost:8888/insecure" | grep -q "<!DOCTYPE html>"'
 
-# Test 14: Verify form exists on /insecure page
+# Test 16: Verify form exists on /insecure page
 run_test "Form exists on /insecure page" \
     'curl -s "http://localhost:8888/insecure" | grep -q "<form.*method=\"POST\""'
 
-# Test 15: Verify table exists on /insecure page
+# Test 17: Verify table exists on /insecure page
 run_test "Table exists on /insecure page" \
     'curl -s "http://localhost:8888/insecure" | grep -q "<table>"'
+
+# Test 18: Verify form exists on /secure page
+run_test "Form exists on /secure page" \
+    'curl -s "http://localhost:8888/secure" | grep -q "<form.*method=\"POST\""'
+
+# Test 19: Verify table exists on /secure page
+run_test "Table exists on /secure page" \
+    'curl -s "http://localhost:8888/secure" | grep -q "<table>"'
 
 # Print summary
 echo ""
