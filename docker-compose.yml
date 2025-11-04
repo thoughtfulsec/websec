@@ -1,11 +1,19 @@
 services:
-  hello-world:
-    image: crccheck/hello-world
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
     platform: linux/amd64
     networks:
       - app-network
     expose:
       - "8000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   modsecurity:
     image: owasp/modsecurity-crs:nginx-alpine
@@ -14,8 +22,10 @@ services:
       - "8888:8080"
     networks:
       - app-network
+    volumes:
+      - ./nginx-config/custom-routes.conf:/etc/nginx/templates/conf.d/default.conf.template
     environment:
-      - BACKEND=http://hello-world:8000
+      - BACKEND=http://app:8000
       - PORT=8080
       - PROXY=1
       - PROXY_SSL=0
@@ -24,7 +34,8 @@ services:
       - ANOMALY_INBOUND=5
       - ANOMALY_OUTBOUND=4
     depends_on:
-      - hello-world
+      app:
+        condition: service_healthy
 
 networks:
   app-network:
