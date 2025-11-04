@@ -96,7 +96,10 @@ app.get('/health', (_req: Request, res: Response) => {
 
 // Initiate Google OAuth flow
 app.get('/auth/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] })
+  passport.authenticate('google', {
+    scope: ['profile', 'email'],
+    prompt: 'select_account'  // Force account selection after logout
+  })
 );
 
 // Google OAuth callback
@@ -123,6 +126,8 @@ app.get('/logout', (req: Request, res: Response): void => {
         console.error('Error destroying session:', err);
       }
       console.log(`👋 User logged out: ${userEmail}`);
+      // Clear the session cookie from the browser
+      res.clearCookie('connect.sid');
       res.redirect('/insecure');
     });
   });
@@ -323,7 +328,7 @@ app.post('/insecure', (req: Request, res: Response): void => {
   // This is BY DESIGN for demonstration purposes
   const vulnerableQuery = `INSERT INTO entries (entry, date) VALUES ('${entry}', '${date}')`;
 
-  db.run(vulnerableQuery, [], (err) => {
+  db.run(vulnerableQuery, [], (err: Error) => {
     if (err) {
       console.error('Error inserting entry:', err);
       res.status(500).send('Internal Server Error');
@@ -348,7 +353,7 @@ app.get('/secure', ensureAuthenticated, (req: Request, res: Response) => {
   const userName = user?.displayName || 'User';
 
   // Fetch all entries from database - VULNERABLE to SQL injection
-  db.all('SELECT * FROM entries ORDER BY id DESC', [], (err, entries) => {
+  db.all('SELECT * FROM entries ORDER BY id DESC', [], (err: Error, entries: any[]) => {
     if (err) {
       console.error('Error fetching entries:', err);
       res.status(500).send('Internal Server Error');
@@ -569,7 +574,7 @@ app.post('/secure', ensureAuthenticated, (req: Request, res: Response): void => 
   // This is BY DESIGN for demonstration purposes
   const vulnerableQuery = `INSERT INTO entries (entry, date) VALUES ('${entry}', '${date}')`;
 
-  db.run(vulnerableQuery, [], (err) => {
+  db.run(vulnerableQuery, [], (err: Error) => {
     if (err) {
       console.error('Error inserting entry:', err);
       res.status(500).send('Internal Server Error');
