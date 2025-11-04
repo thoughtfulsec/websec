@@ -1,10 +1,25 @@
 import express, { Request, Response } from 'express';
+import session from 'express-session';
+// @ts-ignore - No type definitions available for connect-sqlite3
+import connectSqlite3 from 'connect-sqlite3';
 import sqlite3 from 'sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
+import passport from './auth/passport-config';
+import { ensureAuthenticated } from './auth/middleware';
 
 const app = express();
 const PORT = 8000;
+
+// Session store setup
+const SQLiteStore = connectSqlite3(session);
+
+// Environment variables
+const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
+
+if (!process.env.SESSION_SECRET) {
+  console.warn('⚠️  WARNING: Using default SESSION_SECRET. Set SESSION_SECRET in .env for production!');
+}
 
 // Middleware to parse JSON bodies and URL-encoded form data
 app.use(express.json());
@@ -44,10 +59,93 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   });
 });
 
+// Session middleware (MUST be before Passport)
+app.use(
+  session({
+    store: new SQLiteStore({
+      db: 'sessions.db',
+      dir: DATA_DIR,
+      table: 'sessions',
+    }),
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      httpOnly: true,
+      secure: false, // Set to true if using HTTPS
+      sameSite: 'lax',
+    },
+  })
+);
+
+// Passport middleware (MUST be after session)
+app.use(passport.initialize());
+app.use(passport.session());
+
+console.log('✅ Session and Passport middleware initialized');
+
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
+
+// ============================================================================
+// Authentication Routes
+// ============================================================================
+
+// Initiate Google OAuth flow
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+// Google OAuth callback
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login-failed' }),
+  (req: Request, res: Response) => {
+    // Successful authentication, redirect to /secure
+    console.log(`✅ OAuth callback successful for user: ${(req.user as any)?.email}`);
+    res.redirect('/secure');
+  }
+);
+
+// Logout route
+app.get('/logout', (req: Request, res: Response): void => {
+  const userEmail = (req.user as any)?.email || 'unknown';
+  req.logout((err): void => {
+    if (err) {
+      console.error('Error during logout:', err);
+      res.status(500).send('Error logging out');
+      return;
+    }
+    req.session.destroy((err): void => {
+      if (err) {
+        console.error('Error destroying session:', err);
+      }
+      console.log(`👋 User logged out: ${userEmail}`);
+      res.redirect('/insecure');
+    });
+  });
+});
+
+// Login failed page (optional)
+app.get('/login-failed', (_req: Request, res: Response) => {
+  res.status(401).send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Login Failed</title></head>
+    <body>
+      <h1>Authentication Failed</h1>
+      <p>Unable to authenticate with Google. Please try again.</p>
+      <a href="/auth/google">Try Again</a>
+    </body>
+    </html>
+  `);
+});
+
+// ============================================================================
+// Application Routes
+// ============================================================================
 
 // Insecure route - GET: Display form and entries table
 // This route will NOT be protected by ModSecurity
@@ -240,10 +338,15 @@ app.post('/insecure', (req: Request, res: Response): void => {
 });
 
 // Secure route - GET: Display form and entries table
-// This route WILL be protected by ModSecurity
+// This route WILL be protected by ModSecurity AND requires Google OAuth authentication
 // INTENTIONALLY VULNERABLE: No input sanitization or SQL injection protection
 // ModSecurity CRS should block SQL injection attempts before they reach the application
-app.get('/secure', (_req: Request, res: Response) => {
+app.get('/secure', ensureAuthenticated, (req: Request, res: Response) => {
+  // Get authenticated user info
+  const user = req.user as any;
+  const userEmail = user?.email || 'Unknown';
+  const userName = user?.displayName || 'User';
+
   // Fetch all entries from database - VULNERABLE to SQL injection
   db.all('SELECT * FROM entries ORDER BY id DESC', [], (err, entries) => {
     if (err) {
@@ -346,12 +449,61 @@ app.get('/secure', (_req: Request, res: Response) => {
       color: #6c757d;
       font-style: italic;
     }
+    .user-info {
+      background-color: #e7f3ff;
+      border: 2px solid #0066cc;
+      border-radius: 5px;
+      padding: 15px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .user-details {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .user-text h3 {
+      margin: 0 0 5px 0;
+      color: #003d7a;
+    }
+    .user-text p {
+      margin: 0;
+      color: #555;
+      font-size: 14px;
+    }
+    .logout-btn {
+      background-color: #dc3545;
+      color: white;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .logout-btn:hover {
+      background-color: #c82333;
+    }
   </style>
 </head>
 <body>
+  <div class="user-info">
+    <div class="user-details">
+      <div class="user-text">
+        <h3>👤 ${userName}</h3>
+        <p>Logged in as: ${userEmail}</p>
+      </div>
+    </div>
+    <a href="/logout" class="logout-btn">Logout</a>
+  </div>
+
   <div class="warning">
     <h2>✅ SECURE: Protected Endpoint</h2>
     <p><strong>ModSecurity Protection: ENABLED</strong></p>
+    <p><strong>Google OAuth: AUTHENTICATED</strong></p>
     <p>This endpoint is protected by OWASP ModSecurity CRS. SQL injection attempts will be blocked with 403 Forbidden.</p>
   </div>
 
@@ -397,7 +549,7 @@ app.get('/secure', (_req: Request, res: Response) => {
 // Secure route - POST: Handle form submission
 // INTENTIONALLY VULNERABLE: No input sanitization or SQL injection protection
 // ModSecurity CRS should block SQL injection attempts before they reach the application
-app.post('/secure', (req: Request, res: Response): void => {
+app.post('/secure', ensureAuthenticated, (req: Request, res: Response): void => {
   const { entry } = req.body;
 
   if (!entry) {
@@ -440,8 +592,13 @@ app.get('/', (_req: Request, res: Response) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server is running on http://0.0.0.0:${PORT}`);
   console.log(`📋 Available endpoints:`);
-  console.log(`   - GET /health    - Health check`);
-  console.log(`   - GET /insecure  - Unprotected route (ModSecurity OFF)`);
-  console.log(`   - GET /secure    - Protected route (ModSecurity ON)`);
+  console.log(`   - GET  /health              - Health check`);
+  console.log(`   - GET  /auth/google         - Initiate Google OAuth login`);
+  console.log(`   - GET  /auth/google/callback - OAuth callback (automatic)`);
+  console.log(`   - GET  /logout              - Logout and destroy session`);
+  console.log(`   - GET  /insecure            - Unprotected route (ModSecurity OFF, No Auth)`);
+  console.log(`   - POST /insecure            - Submit entry (ModSecurity OFF, No Auth)`);
+  console.log(`   - GET  /secure              - Protected route (ModSecurity ON, OAuth Required)`);
+  console.log(`   - POST /secure              - Submit entry (ModSecurity ON, OAuth Required)`);
 });
 
