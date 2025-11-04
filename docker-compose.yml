@@ -1,0 +1,32 @@
+services:
+  hello-world:
+    image: crccheck/hello-world
+    platform: linux/amd64
+    networks:
+      - app-network
+    expose:
+      - "8000"
+
+  modsecurity:
+    image: owasp/modsecurity-crs:nginx-alpine
+    platform: linux/amd64
+    ports:
+      - "8888:8080"
+    networks:
+      - app-network
+    environment:
+      - BACKEND=http://hello-world:8000
+      - PORT=8080
+      - PROXY=1
+      - PROXY_SSL=0
+      - PROXY_SSL_VERIFY=off
+      - PARANOIA=1
+      - ANOMALY_INBOUND=5
+      - ANOMALY_OUTBOUND=4
+    depends_on:
+      - hello-world
+
+networks:
+  app-network:
+    driver: bridge
+
