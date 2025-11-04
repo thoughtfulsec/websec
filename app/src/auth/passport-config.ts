@@ -22,6 +22,22 @@ if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
   process.exit(1);
 }
 
+/**
+ * Transform Google OAuth profile to SessionUser format
+ * Handles optional fields and provides safe defaults
+ *
+ * @param profile - Google OAuth profile from passport-google-oauth20
+ * @returns SessionUser object with normalized data
+ */
+export function transformGoogleProfile(profile: Profile): SessionUser {
+  return {
+    id: profile.id,
+    email: profile.emails?.[0]?.value || '',
+    displayName: profile.displayName || '',
+    photo: profile.photos?.[0]?.value,
+  };
+}
+
 // Configure Google OAuth Strategy
 passport.use(
   new GoogleStrategy(
@@ -33,12 +49,7 @@ passport.use(
     },
     (_accessToken: string, _refreshToken: string, profile: Profile, done: VerifyCallback) => {
       // Extract user information from Google profile
-      const user: SessionUser = {
-        id: profile.id,
-        email: profile.emails?.[0]?.value || '',
-        displayName: profile.displayName || '',
-        photo: profile.photos?.[0]?.value,
-      };
+      const user = transformGoogleProfile(profile);
 
       console.log(`✅ User authenticated: ${user.email} (${user.displayName})`);
 
