@@ -71,7 +71,7 @@ cat > "$APP_DIR/.env" <<EOF
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
-GOOGLE_CALLBACK_URL=http://$PUBLIC_IP:8888/auth/google/callback
+GOOGLE_CALLBACK_URL=http://$PUBLIC_IP.nip.io:8888/auth/google/callback
 
 # Session Secret
 SESSION_SECRET=$SESSION_SECRET
@@ -109,8 +109,8 @@ sudo chmod 755 /var/lib/toolbox/bin
 
 # Download Docker Compose if not already present
 if [ ! -f "$DOCKER_COMPOSE_PATH" ]; then
-    echo "Downloading Docker Compose ${DOCKER_COMPOSE_VERSION}..."
-    sudo curl -SL "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+    echo "Downloading Docker Compose $${DOCKER_COMPOSE_VERSION}..."
+    sudo curl -SL "https://github.com/docker/compose/releases/download/$${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" \
         -o "$DOCKER_COMPOSE_PATH"
     sudo chmod 755 "$DOCKER_COMPOSE_PATH"
     echo "Docker Compose installed successfully"
