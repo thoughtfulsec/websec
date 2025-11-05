@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import passport from './auth/passport-config';
 import { ensureAuthenticated } from './auth/middleware';
+import { extractAndVerifyJWT } from './utils/jwt-verification';
 
 const app = express();
 const PORT = 8000;
@@ -16,9 +17,20 @@ const SQLiteStore = connectSqlite3(session);
 
 // Environment variables
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
+const JWT_PUBLIC_KEY_PROD = process.env.JWT_PUBLIC_KEY_PROD || '';
+const JWT_PUBLIC_KEY_DEV = process.env.JWT_PUBLIC_KEY_DEV || '';
+const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
 
 if (!process.env.SESSION_SECRET) {
   console.warn('⚠️  WARNING: Using default SESSION_SECRET. Set SESSION_SECRET in .env for production!');
+}
+
+if (!JWT_PUBLIC_KEY_PROD) {
+  console.warn('⚠️  WARNING: JWT_PUBLIC_KEY_PROD not set. JWT verification will not work for production tokens.');
+}
+
+if (IS_DEVELOPMENT && !JWT_PUBLIC_KEY_DEV) {
+  console.warn('⚠️  WARNING: JWT_PUBLIC_KEY_DEV not set. JWT verification will not work for dev tokens.');
 }
 
 // Middleware to parse JSON bodies and URL-encoded form data
@@ -48,7 +60,8 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
     CREATE TABLE IF NOT EXISTS entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       entry TEXT NOT NULL,
-      date TEXT NOT NULL
+      date TEXT NOT NULL,
+      isVerifiedJWT INTEGER DEFAULT 0
     )
   `, (err) => {
     if (err) {
@@ -56,6 +69,18 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
       process.exit(1);
     }
     console.log('✅ Entries table ready');
+
+    // Migration: Add isVerifiedJWT column to existing tables
+    db.run(`
+      ALTER TABLE entries ADD COLUMN isVerifiedJWT INTEGER DEFAULT 0
+    `, (alterErr) => {
+      // Ignore error if column already exists
+      if (alterErr && !alterErr.message.includes('duplicate column')) {
+        console.error('⚠️  Warning: Could not add isVerifiedJWT column:', alterErr.message);
+      } else if (!alterErr) {
+        console.log('✅ Added isVerifiedJWT column to existing entries table');
+      }
+    });
   });
 });
 
@@ -324,9 +349,25 @@ app.post('/insecure', (req: Request, res: Response): void => {
 
   const date = new Date().toISOString();
 
+  // JWT Verification: Check if entry contains a valid JWT token
+  const jwtVerification = extractAndVerifyJWT(
+    entry,
+    JWT_PUBLIC_KEY_PROD,
+    JWT_PUBLIC_KEY_DEV,
+    IS_DEVELOPMENT
+  );
+
+  const isVerifiedJWT = jwtVerification.isValid ? 1 : 0;
+
+  if (jwtVerification.isValid) {
+    console.log(`🔐 JWT signature verified successfully for token: ${jwtVerification.token?.substring(0, 20)}...`);
+  } else if (jwtVerification.token) {
+    console.log(`⚠️  JWT signature verification failed: ${jwtVerification.error}`);
+  }
+
   // INTENTIONALLY VULNERABLE: Direct string interpolation - susceptible to SQL injection
   // This is BY DESIGN for demonstration purposes
-  const vulnerableQuery = `INSERT INTO entries (entry, date) VALUES ('${entry}', '${date}')`;
+  const vulnerableQuery = `INSERT INTO entries (entry, date, isVerifiedJWT) VALUES ('${entry}', '${date}', ${isVerifiedJWT})`;
 
   db.run(vulnerableQuery, [], (err: Error) => {
     if (err) {
@@ -335,7 +376,7 @@ app.post('/insecure', (req: Request, res: Response): void => {
       return;
     }
 
-    console.log(`📝 New entry added: "${entry.substring(0, 50)}${entry.length > 50 ? '...' : ''}"`);
+    console.log(`📝 New entry added: "${entry.substring(0, 50)}${entry.length > 50 ? '...' : ''}" (JWT verified: ${isVerifiedJWT === 1})`);
 
     // Redirect back to GET /insecure to display updated table
     res.redirect('/insecure');
@@ -448,6 +489,10 @@ app.get('/secure', ensureAuthenticated, (req: Request, res: Response) => {
     tr:nth-child(odd) {
       background-color: #ffffff;
     }
+    tr.jwt-verified {
+      background-color: #f8d7da !important;
+      border-left: 4px solid #dc3545;
+    }
     .empty-message {
       text-align: center;
       padding: 20px;
@@ -534,7 +579,7 @@ app.get('/secure', ensureAuthenticated, (req: Request, res: Response) => {
         ${entries.length === 0
           ? '<tr><td colspan="2" class="empty-message">No entries yet. Submit the form above to add one.</td></tr>'
           : entries.map((entry: any) => `
-            <tr>
+            <tr${entry.isVerifiedJWT ? ' class="jwt-verified"' : ''}>
               <td>${entry.entry}</td>
               <td>${entry.date}</td>
             </tr>
@@ -570,9 +615,25 @@ app.post('/secure', ensureAuthenticated, (req: Request, res: Response): void => 
 
   const date = new Date().toISOString();
 
+  // JWT Verification: Check if entry contains a valid JWT token
+  const jwtVerification = extractAndVerifyJWT(
+    entry,
+    JWT_PUBLIC_KEY_PROD,
+    JWT_PUBLIC_KEY_DEV,
+    IS_DEVELOPMENT
+  );
+
+  const isVerifiedJWT = jwtVerification.isValid ? 1 : 0;
+
+  if (jwtVerification.isValid) {
+    console.log(`🔐 JWT signature verified successfully for token: ${jwtVerification.token?.substring(0, 20)}...`);
+  } else if (jwtVerification.token) {
+    console.log(`⚠️  JWT signature verification failed: ${jwtVerification.error}`);
+  }
+
   // INTENTIONALLY VULNERABLE: Direct string interpolation - susceptible to SQL injection
   // This is BY DESIGN for demonstration purposes
-  const vulnerableQuery = `INSERT INTO entries (entry, date) VALUES ('${entry}', '${date}')`;
+  const vulnerableQuery = `INSERT INTO entries (entry, date, isVerifiedJWT) VALUES ('${entry}', '${date}', ${isVerifiedJWT})`;
 
   db.run(vulnerableQuery, [], (err: Error) => {
     if (err) {
@@ -581,7 +642,7 @@ app.post('/secure', ensureAuthenticated, (req: Request, res: Response): void => 
       return;
     }
 
-    console.log(`📝 New entry added: "${entry.substring(0, 50)}${entry.length > 50 ? '...' : ''}"`);
+    console.log(`📝 New entry added: "${entry.substring(0, 50)}${entry.length > 50 ? '...' : ''}" (JWT verified: ${isVerifiedJWT === 1})`);
 
     // Redirect back to GET /secure to display updated table
     res.redirect('/secure');

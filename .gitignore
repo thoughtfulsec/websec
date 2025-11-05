@@ -4,6 +4,7 @@
 # SQLite databases (local development data)
 app/data/entries.db
 app/data/sessions.db
+app/dist/*
 
 # Node.js
 node_modules/

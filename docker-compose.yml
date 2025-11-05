@@ -15,6 +15,10 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_CALLBACK_URL=${GOOGLE_CALLBACK_URL:-http://localhost:8888/auth/google/callback}
       - SESSION_SECRET=${SESSION_SECRET}
+      - JWT_PUBLIC_KEY_PROD=${JWT_PUBLIC_KEY_PROD}
+      - JWT_PUBLIC_KEY_DEV=${JWT_PUBLIC_KEY_DEV}
+      - JWT_PRIVATE_KEY_DEV=${JWT_PRIVATE_KEY_DEV}
+      - NODE_ENV=${NODE_ENV:-development}
     env_file:
       - .env
     healthcheck:
