@@ -11,7 +11,8 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "generate-jwt": "ts-node scripts/generate-jwt.ts"
+    "generate-jwt": "ts-node scripts/generate-jwt.ts",
+    "test-jwt": "ts-node scripts/test-jwt-verification.ts"
   },
   "keywords": [
     "modsecurity",
