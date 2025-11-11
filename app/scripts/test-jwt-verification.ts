@@ -158,7 +158,22 @@ if (manualResult) {
 console.log('');
 
 console.log('═══════════════════════════════════════════════════════════');
-console.log('Test 3: Generate and verify a development test token against the dev key');
+console.log('Test 3: Production code with fallback (verifyJWTSignature)');
+console.log('═══════════════════════════════════════════════════════════');
+import { verifyJWTSignature } from '../src/utils/jwt-verification';
+const prodCodeResult = verifyJWTSignature(prodtoken, JWT_PUBLIC_KEY_PROD);
+if (prodCodeResult) {
+  console.log('✅ Production verifyJWTSignature() with PROD key: SUCCESS');
+  console.log('   The fallback verification strategy works!');
+  console.log('   jwt.verify() failed due to curve mismatch, but manual verification succeeded.');
+} else {
+  console.log('❌ Production verifyJWTSignature() with PROD key: FAILED');
+  console.log('   The fallback strategy did not work as expected.');
+}
+console.log('');
+
+console.log('═══════════════════════════════════════════════════════════');
+console.log('Test 4: Generate and verify a development test token against the dev key');
 console.log('═══════════════════════════════════════════════════════════');
 
 // Step 1: Generate a test JWT
